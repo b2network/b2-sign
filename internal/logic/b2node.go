@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/hex"
 	"fmt"
+	"log"
 
 	"github.com/b2network/b2-sign/internal/config"
 	"github.com/btcsuite/btcd/btcutil/psbt"
@@ -246,6 +247,7 @@ func (n *NodeClient) Sign(hash string, pack *psbt.Packet) error {
 	if code != 0 {
 		return fmt.Errorf("code: %d, err: %s", code, rawLog)
 	}
+	log.Printf("sign success, btc hash:%s, b2node tx hash:%s", hash, msgResponse.TxResponse.TxHash)
 	return nil
 }
 

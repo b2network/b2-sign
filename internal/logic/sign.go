@@ -98,10 +98,7 @@ func (s *SignService) SignPsbt(pack *psbt.Packet) (*psbt.Packet, error) {
 		if err != nil {
 			return nil, err
 		}
-		pack.Inputs[i].PartialSigs = append(pack.Inputs[i].PartialSigs, &psbt.PartialSig{
-			PubKey:    s.key.PubKey().SerializeCompressed(),
-			Signature: witnessSig,
-		})
+		pack.Inputs[i].FinalScriptSig = witnessSig
 		updater.AddInSighashType(txscript.SigHashAll, i)
 	}
 	return updater.Upsbt, nil
