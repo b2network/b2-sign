@@ -6,8 +6,20 @@ import (
 
 // Config is the global config.
 type Config struct {
-	UnsignedAPI string `env:"UNSIGNED_API"`
-	SignedAPI   string `env:"SIGNED_API"`
+	// B2NodePrivKey defines the b2 node private key, b2node rpc sign
+	B2NodePrivKey string `env:"B2_NODE_PRIV_KEY"`
+	// B2NodeAddressPrefix defines the b2 node address prefix, eg: ethm
+	B2NodeAddressPrefix string `env:"B2_NODE_ADDRESS_PREFIX" envDefault:"ethm"`
+	// B2NodeChainID defines the b2 node chain id
+	B2NodeChainID string `env:"B2_NODE_CHAIN_ID"`
+	// B2NodeGRPCHost defines the b2 node grpc host
+	B2NodeGRPCHost string `env:"B2_NODE_GRPC_HOST" envDefault:"127.0.0.1"`
+	// B2NodeGRPCPort defines the b2 node grpc port
+	B2NodeGRPCPort uint32 `env:"B2_NODE_GRPC_PORT" envDefault:"9090"`
+	// B2NodeGasPrices defines the b2 node gas prices
+	B2NodeGasPrices uint64 `env:"B2_NODE_GAS_PRICES" envDefault:"100000"`
+	// B2NodeDenom defines the b2 node denom
+	B2NodeDenom string ` env:"B2_NODE_DENOM" envDefault:"aphoton"`
 }
 
 // LoadConfig load config from environment.

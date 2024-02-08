@@ -14,12 +14,7 @@ import (
 	"github.com/tyler-smith/go-bip39"
 )
 
-const (
-	//TODO: derive path
-	DerivePath = "m/48'/1'/0'/2'/0/1/0/0"
-)
-
-func Start(mnemonic, mnemonicPass string) (err error) {
+func Start(mnemonic, mnemonicPass string, derive string) (err error) {
 	cfg, err := config.LoadConfig()
 	if err != nil {
 		return err
@@ -33,17 +28,23 @@ func Start(mnemonic, mnemonicPass string) (err error) {
 	if err != nil {
 		return err
 	}
-	childKey, err := masterKey.NewChildKeyByPathString(DerivePath)
+	childKey, err := masterKey.NewChildKeyByPathString(derive)
 	if err != nil {
 		return err
 	}
-	log.Println("publicKey: ", childKey.PublicKey())
+	log.Println("xpub: ", childKey.PublicKey())
+	log.Println("derive Path: ", derive)
 	signKey, err := childKey.ECPrivKey()
 	if err != nil {
 		log.Println(err)
-		return
+		return err
 	}
-	s := logic.NewSignService(cfg, signKey)
+	b2NodeClient, err := logic.NewNodeClient(cfg)
+	if err != nil {
+		log.Println(err)
+		return err
+	}
+	s := logic.NewSignService(cfg, signKey, b2NodeClient)
 	errCh := make(chan error)
 	go func() {
 		if err := s.Start(); err != nil {

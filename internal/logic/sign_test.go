@@ -62,7 +62,7 @@ func createPsbtFromTx(t *testing.T, tx *wire.MsgTx) *psbt.Packet {
 
 func mockSignService(t *testing.T, key *btcec.PrivateKey) *logic.SignService {
 	cfg := config.Config{}
-	s := logic.NewSignService(&cfg, key)
+	s := logic.NewSignService(&cfg, key, nil)
 	return s
 }
 
@@ -75,7 +75,6 @@ func generateMultiPkScript(pubKeys [][]byte, minSignNum int, net *chaincfg.Param
 		}
 		allPubKeys = append(allPubKeys, addressPubKey)
 	}
-
 	builder := txscript.NewScriptBuilder()
 	builder.AddInt64(int64(minSignNum))
 	for _, key := range allPubKeys {

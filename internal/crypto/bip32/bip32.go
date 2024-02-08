@@ -29,7 +29,7 @@ func (key *Key) NewChildKeyByPathString(childPath string) (*Key, error) {
 			continue
 		}
 
-		var harden = false
+		harden := false
 		if strings.HasSuffix(part, "'") {
 			harden = true
 			part = strings.TrimSuffix(part, "'")
@@ -40,7 +40,7 @@ func (key *Key) NewChildKeyByPathString(childPath string) (*Key, error) {
 			return nil, err
 		}
 
-		var uid = uint32(id)
+		uid := uint32(id)
 		if harden {
 			uid |= bip32.FirstHardenedChild
 		}

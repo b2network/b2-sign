@@ -1,12 +1,7 @@
 package logic
 
 import (
-	"bytes"
-	"encoding/json"
-	"fmt"
-	"io"
 	"log"
-	"net/http"
 	"strings"
 	"time"
 
@@ -17,34 +12,21 @@ import (
 )
 
 const (
-	ServiceName = "BitcoinSignService"
 	WaitTimeout = 1 * time.Minute
 )
 
 type SignService struct {
-	cfg *config.Config
-	key *btcec.PrivateKey
+	cfg    *config.Config
+	key    *btcec.PrivateKey
+	b2node *NodeClient
 }
 
-// UnsignedAPIResponse
-type UnsignedAPIResponse struct {
-	Code int    `json:"code"`
-	Msg  string `json:"msg"`
-	Data struct {
-		Tx []Tx `json:"tx"`
-	} `json:"data"`
-}
-
-type Tx struct {
-	Psbt string `json:"psbt"`
-}
-
-type SignedAPIRequest struct {
-	Tx []Tx `json:"tx"`
-}
-
-func NewSignService(cfg *config.Config, key *btcec.PrivateKey) *SignService {
-	s := &SignService{cfg, key}
+func NewSignService(
+	cfg *config.Config,
+	key *btcec.PrivateKey,
+	b2node *NodeClient,
+) *SignService {
+	s := &SignService{cfg, key, b2node}
 	return s
 }
 
@@ -54,13 +36,11 @@ func (s *SignService) Start() error {
 	for {
 		<-ticker.C
 		ticker.Reset(WaitTimeout)
-
 		log.Println("start handle unsigned data")
 		err := s.Handle()
 		if err != nil {
 			log.Println("handle err:", err.Error())
 		}
-		log.Println("end")
 	}
 }
 
@@ -71,39 +51,29 @@ func (s *SignService) Handle() error {
 		}
 	}()
 
-	unsignedRsp, err := s.UnsignedDATA()
+	unsignedRsp, err := s.b2node.Unsigned()
 	if err != nil {
 		return err
 	}
 
-	signedTx := make([]Tx, 0)
-	for _, tx := range unsignedRsp.Data.Tx {
-		pack, err := psbt.NewFromRawBytes(strings.NewReader(tx.Psbt), true)
+	for _, tx := range unsignedRsp {
+		pack, err := psbt.NewFromRawBytes(strings.NewReader(tx.EncodedData), true)
 		if err != nil {
-			log.Println("decode psbt raw err")
+			log.Println("decode psbt raw err:", err.Error())
 			return err
 		}
 		signPack, err := s.SignPsbt(pack)
 		if err != nil {
+			log.Println("sign psbt err:", err.Error())
 			return err
 		}
 
-		signPackB64, err := signPack.B64Encode()
+		err = s.b2node.Sign(tx.TxId, signPack)
 		if err != nil {
+			log.Println("b2node sign err:", err.Error())
 			return err
 		}
-
-		signedTx = append(signedTx, Tx{
-			Psbt: signPackB64,
-		})
 	}
-	signedReq := &SignedAPIRequest{
-		Tx: signedTx,
-	}
-	if err := s.SendSignedDATA(signedReq); err != nil {
-		return err
-	}
-
 	return nil
 }
 
@@ -121,7 +91,7 @@ func (s *SignService) SignPsbt(pack *psbt.Packet) (*psbt.Packet, error) {
 			txscript.NewTxSigHashes(tx, prevOutputFetcher),
 			i,
 			pack.Inputs[i].WitnessUtxo.Value,
-			pack.Inputs[i].WitnessUtxo.PkScript,
+			pack.Inputs[i].WitnessScript,
 			txscript.SigHashAll,
 			s.key,
 		)
@@ -135,52 +105,4 @@ func (s *SignService) SignPsbt(pack *psbt.Packet) (*psbt.Packet, error) {
 		updater.AddInSighashType(txscript.SigHashAll, i)
 	}
 	return updater.Upsbt, nil
-}
-
-// UnsignedDATA get unsigned data
-func (s *SignService) UnsignedDATA() (*UnsignedAPIResponse, error) {
-	data := UnsignedAPIResponse{}
-	resp, err := s.Http("POST", s.cfg.UnsignedAPI, nil)
-	if err != nil {
-		return nil, err
-	}
-	err = json.Unmarshal(resp, &data)
-	if err != nil {
-		return nil, err
-	}
-	return &data, nil
-}
-
-// SendSignedDATA send signed data
-func (s *SignService) SendSignedDATA(req *SignedAPIRequest) error {
-	bodyData, err := json.Marshal(req)
-	if err != nil {
-		return err
-	}
-	_, err = s.Http("POST", s.cfg.SignedAPI, bytes.NewBuffer(bodyData))
-	if err != nil {
-		return err
-	}
-	return nil
-}
-
-func (s *SignService) Http(method string, url string, bodyData io.Reader) ([]byte, error) {
-	client := &http.Client{}
-	req, err := http.NewRequest(method, url, bodyData)
-	if err != nil {
-		return nil, err
-	}
-	resp, err := client.Do(req)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("http response status code not ok")
-	}
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, err
-	}
-	return body, nil
 }
