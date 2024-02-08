@@ -24,6 +24,7 @@ import (
 	"github.com/evmos/ethermint/crypto/ethsecp256k1"
 	eTypes "github.com/evmos/ethermint/types"
 	bridgeTypes "github.com/evmos/ethermint/x/bridge/types"
+	feeTypes "github.com/evmos/ethermint/x/feemarket/types"
 )
 
 const (
@@ -32,12 +33,12 @@ const (
 
 type NodeClient struct {
 	PrivateKey    ethsecp256k1.PrivKey
-	AddressPrefix string
 	ChainID       string
 	GrpcHost      string
 	GrpcPort      uint32
 	CoinDenom     string
 	GasPrices     uint64
+	AddressPrefix string
 }
 
 func NewNodeClient(
@@ -47,16 +48,20 @@ func NewNodeClient(
 	if nil != err {
 		return nil, err
 	}
+
+	prefix, err := B2NodeBech32Prefix(cfg.B2NodeGRPCHost, cfg.B2NodeGRPCPort)
+	if err != nil {
+		return nil, err
+	}
 	return &NodeClient{
 		PrivateKey: ethsecp256k1.PrivKey{
 			Key: privatekeyBytes,
 		},
-		AddressPrefix: cfg.B2NodeAddressPrefix,
 		ChainID:       cfg.B2NodeChainID,
 		CoinDenom:     cfg.B2NodeDenom,
-		GasPrices:     cfg.B2NodeGasPrices,
 		GrpcHost:      cfg.B2NodeGRPCHost,
 		GrpcPort:      cfg.B2NodeGRPCPort,
+		AddressPrefix: prefix,
 	}, nil
 }
 
@@ -94,7 +99,12 @@ func (n *NodeClient) GetAccountInfo() (*eTypes.EthAccount, error) {
 }
 
 func (n *NodeClient) GetGasPrice() (uint64, error) {
-	return n.GasPrices, nil
+	baseFee, err := n.BaseFee()
+	if err != nil {
+		return 0, err
+	}
+	baseFee = baseFee * 2
+	return baseFee, nil
 }
 
 func (n *NodeClient) broadcastTx(ctx context.Context, msgs ...sdk.Msg) (*tx.BroadcastTxResponse, error) {
@@ -237,4 +247,31 @@ func (n *NodeClient) Sign(hash string, pack *psbt.Packet) error {
 		return fmt.Errorf("code: %d, err: %s", code, rawLog)
 	}
 	return nil
+}
+
+func (n *NodeClient) BaseFee() (uint64, error) {
+	conn, err := n.grpcConn()
+	if err != nil {
+		return 0, err
+	}
+	queryClient := feeTypes.NewQueryClient(conn)
+	res, err := queryClient.Params(context.Background(), &feeTypes.QueryParamsRequest{})
+	if err != nil {
+		return 0, err
+	}
+	return res.Params.BaseFee.Uint64(), nil
+}
+
+func B2NodeBech32Prefix(host string, port uint32) (string, error) {
+	conn, err := grpc.Dial(fmt.Sprintf("%s:%d", host, port), grpc.WithTransportCredentials(insecure.NewCredentials()))
+	if err != nil {
+		return "", err
+	}
+	defer conn.Close()
+	queryClient := authTypes.NewQueryClient(conn)
+	bech32Prefix, err := queryClient.Bech32Prefix(context.Background(), &authTypes.Bech32PrefixRequest{})
+	if err != nil {
+		return "", err
+	}
+	return bech32Prefix.Bech32Prefix, nil
 }
