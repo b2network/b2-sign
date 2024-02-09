@@ -3,6 +3,7 @@ package logic
 import (
 	"context"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"log"
 
@@ -42,6 +43,11 @@ type NodeClient struct {
 	AddressPrefix   string
 	B2NodeAddress   string
 	UnsignedTxLimit uint64
+}
+
+type Sign struct {
+	TxInIndex int
+	Sign      []byte
 }
 
 func NewNodeClient(
@@ -224,11 +230,19 @@ func (n *NodeClient) Sign(ctx context.Context, hash string, pack *psbt.Packet) e
 	if len(pack.Inputs) == 0 {
 		return fmt.Errorf("psbt pack.Inputs is empty")
 	}
-	packB64, err := pack.B64Encode()
+	sign := make([]Sign, len(pack.Inputs))
+	for index, input := range pack.Inputs {
+		sign = append(sign, Sign{
+			TxInIndex: index,
+			Sign:      input.FinalScriptSig,
+		})
+	}
+
+	signJSON, err := json.Marshal(sign)
 	if err != nil {
 		return err
 	}
-	msg := bridgeTypes.NewMsgSignWithdraw(n.B2NodeAddress, hash, packB64)
+	msg := bridgeTypes.NewMsgSignWithdraw(n.B2NodeAddress, hash, hex.EncodeToString(signJSON))
 	msgResponse, err := n.broadcastTx(ctx, msg)
 	if err != nil {
 		return fmt.Errorf("broadcastTx err: %w", err)
