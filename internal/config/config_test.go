@@ -13,7 +13,7 @@ func TestConfigEnv(t *testing.T) {
 	os.Setenv("B2_NODE_GRPC_HOST", "127.0.0.1")
 	os.Setenv("B2_NODE_GRPC_PORT", "9090")
 	os.Setenv("B2_NODE_DENOM", "aphoton")
-	os.Setenv("B2_NODE_UNSIGNED_TX_LENGTH", "100")
+	os.Setenv("B2_NODE_UNSIGNED_TX_LIMIT", "100")
 	cfg, err := config.LoadConfig()
 	if err != nil {
 		t.Fatal(err)
