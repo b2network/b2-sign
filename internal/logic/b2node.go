@@ -33,13 +33,15 @@ const (
 )
 
 type NodeClient struct {
-	PrivateKey    ethsecp256k1.PrivKey
-	ChainID       string
-	GrpcHost      string
-	GrpcPort      uint32
-	CoinDenom     string
-	GasPrices     uint64
-	AddressPrefix string
+	PrivateKey      ethsecp256k1.PrivKey
+	ChainID         string
+	GrpcHost        string
+	GrpcPort        uint32
+	CoinDenom       string
+	GasPrices       uint64
+	AddressPrefix   string
+	B2NodeAddress   string
+	UnsignedTxLimit uint64
 }
 
 func NewNodeClient(
@@ -50,19 +52,29 @@ func NewNodeClient(
 		return nil, err
 	}
 
-	prefix, err := B2NodeBech32Prefix(cfg.B2NodeGRPCHost, cfg.B2NodeGRPCPort)
+	prefix, err := bech32Prefix(cfg.B2NodeGRPCHost, cfg.B2NodeGRPCPort)
 	if err != nil {
 		return nil, err
 	}
+
+	pk := ethsecp256k1.PrivKey{
+		Key: privatekeyBytes,
+	}
+
+	b2NodeAddress, err := b2NodeAddress(pk, prefix)
+	if err != nil {
+		return nil, err
+	}
+
 	return &NodeClient{
-		PrivateKey: ethsecp256k1.PrivKey{
-			Key: privatekeyBytes,
-		},
-		ChainID:       cfg.B2NodeChainID,
-		CoinDenom:     cfg.B2NodeDenom,
-		GrpcHost:      cfg.B2NodeGRPCHost,
-		GrpcPort:      cfg.B2NodeGRPCPort,
-		AddressPrefix: prefix,
+		PrivateKey:      pk,
+		ChainID:         cfg.B2NodeChainID,
+		CoinDenom:       cfg.B2NodeDenom,
+		GrpcHost:        cfg.B2NodeGRPCHost,
+		GrpcPort:        cfg.B2NodeGRPCPort,
+		AddressPrefix:   prefix,
+		B2NodeAddress:   b2NodeAddress,
+		UnsignedTxLimit: cfg.B2NodeUnsignedTxLimit,
 	}, nil
 }
 
@@ -74,12 +86,15 @@ func (n *NodeClient) grpcConn() (*grpc.ClientConn, error) {
 	return conn, nil
 }
 
-func (n *NodeClient) GetAccountInfo() (*eTypes.EthAccount, error) {
-	b2nodeAddress, err := n.B2NodeSenderAddress()
+func grpcConn(host string, port uint32) (*grpc.ClientConn, error) {
+	conn, err := grpc.Dial(fmt.Sprintf(host, port), grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
 		return nil, err
 	}
+	return conn, nil
+}
 
+func (n *NodeClient) GetAccountInfo(ctx context.Context) (*eTypes.EthAccount, error) {
 	conn, err := n.grpcConn()
 	if err != nil {
 		return nil, err
@@ -87,20 +102,20 @@ func (n *NodeClient) GetAccountInfo() (*eTypes.EthAccount, error) {
 	defer conn.Close()
 
 	authClient := authTypes.NewQueryClient(conn)
-	res, err := authClient.Account(context.Background(), &authTypes.QueryAccountRequest{Address: b2nodeAddress})
+	res, err := authClient.Account(ctx, &authTypes.QueryAccountRequest{Address: n.B2NodeAddress})
 	if err != nil {
-		return nil, fmt.Errorf("[NodeClient] GetAccountInfo err: %w", err)
+		return nil, fmt.Errorf("GetAccountInfo err: %w", err)
 	}
 	ethAccount := &eTypes.EthAccount{}
 	err = ethAccount.Unmarshal(res.GetAccount().GetValue())
 	if err != nil {
-		return nil, fmt.Errorf("[NodeClient][ethAccount.Unmarshal] err: %w", err)
+		return nil, err
 	}
 	return ethAccount, nil
 }
 
-func (n *NodeClient) GetGasPrice() (uint64, error) {
-	baseFee, err := n.BaseFee()
+func (n *NodeClient) GetGasPrice(ctx context.Context) (uint64, error) {
+	baseFee, err := n.BaseFee(ctx)
 	if err != nil {
 		return 0, err
 	}
@@ -109,13 +124,13 @@ func (n *NodeClient) GetGasPrice() (uint64, error) {
 }
 
 func (n *NodeClient) broadcastTx(ctx context.Context, msgs ...sdk.Msg) (*tx.BroadcastTxResponse, error) {
-	gasPrice, err := n.GetGasPrice()
+	gasPrice, err := n.GetGasPrice(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("[broadcastTx][GetEthGasPrice] err: %w", err)
+		return nil, fmt.Errorf("GetGasPrice err: %w", err)
 	}
-	txBytes, err := n.buildSimTx(gasPrice, msgs...)
+	txBytes, err := n.buildSimTx(ctx, gasPrice, msgs...)
 	if err != nil {
-		return nil, fmt.Errorf("[broadcastTx] err: %w", err)
+		return nil, fmt.Errorf("buildSimTx err: %w", err)
 	}
 
 	conn, err := n.grpcConn()
@@ -129,22 +144,22 @@ func (n *NodeClient) broadcastTx(ctx context.Context, msgs ...sdk.Msg) (*tx.Broa
 		TxBytes: txBytes,
 	})
 	if err != nil {
-		return nil, fmt.Errorf("[broadcastTx] err: %w", err)
+		return nil, fmt.Errorf("BroadcastTx err: %w", err)
 	}
 	return res, err
 }
 
-func (n *NodeClient) buildSimTx(gasPrice uint64, msgs ...sdk.Msg) ([]byte, error) {
+func (n *NodeClient) buildSimTx(ctx context.Context, gasPrice uint64, msgs ...sdk.Msg) ([]byte, error) {
 	encCfg := simapp.MakeTestEncodingConfig()
 	txBuilder := encCfg.TxConfig.NewTxBuilder()
 	err := txBuilder.SetMsgs(msgs...)
 	if err != nil {
-		return nil, fmt.Errorf("[BuildSimTx][SetMsgs] err: %w", err)
+		return nil, fmt.Errorf("SetMsgs err: %w", err)
 	}
 
-	ethAccount, err := n.GetAccountInfo()
+	ethAccount, err := n.GetAccountInfo(ctx)
 	if nil != err {
-		return nil, fmt.Errorf("[BuildSimTx][GetAccountInfo]err: %w", err)
+		return nil, fmt.Errorf("GetAccountInfo err: %w", err)
 	}
 	signV2 := signing.SignatureV2{
 		PubKey: n.PrivateKey.PubKey(),
@@ -155,7 +170,7 @@ func (n *NodeClient) buildSimTx(gasPrice uint64, msgs ...sdk.Msg) ([]byte, error
 	}
 	err = txBuilder.SetSignatures(signV2)
 	if err != nil {
-		return nil, fmt.Errorf("[BuildSimTx][SetSignatures 1]err: %w", err)
+		return nil, fmt.Errorf("SetSignatures err: %w", err)
 	}
 	txBuilder.SetGasLimit(DefaultBaseGasPrice)
 	txBuilder.SetFeeAmount(sdk.NewCoins(sdk.Coin{
@@ -173,47 +188,30 @@ func (n *NodeClient) buildSimTx(gasPrice uint64, msgs ...sdk.Msg) ([]byte, error
 		encCfg.TxConfig.SignModeHandler().DefaultMode(), signerData,
 		txBuilder, &n.PrivateKey, encCfg.TxConfig, ethAccount.BaseAccount.Sequence)
 	if err != nil {
-		return nil, fmt.Errorf("[BuildSimTx][SignWithPrivKey] err: %w", err)
+		return nil, fmt.Errorf("SignWithPrivKey err: %w", err)
 	}
 
 	err = txBuilder.SetSignatures(sigV2)
 	if err != nil {
-		return nil, fmt.Errorf("[BuildSimTx][SetSignatures 2] err: %w", err)
+		return nil, fmt.Errorf("SetSignatures 2 err: %w", err)
 	}
 	txBytes, err := encCfg.TxConfig.TxEncoder()(txBuilder.GetTx())
 	if err != nil {
-		return nil, fmt.Errorf("[BuildSimTx][GetTx] err: %w", err)
+		return nil, fmt.Errorf("GetTx err: %w", err)
 	}
 	return txBytes, err
 }
 
-func (n *NodeClient) B2NodeSenderAddress() (string, error) {
-	privateKey, err := n.PrivateKey.ToECDSA()
-	if err != nil {
-		return "", err
-	}
-	ethAddress := crypto.PubkeyToAddress(privateKey.PublicKey)
-	bz, err := hex.DecodeString(ethAddress.Hex()[2:])
-	if err != nil {
-		return "", err
-	}
-	b2nodeAddress, err := bech32.ConvertAndEncode(n.AddressPrefix, bz)
-	if err != nil {
-		return "", err
-	}
-	return b2nodeAddress, nil
-}
-
-func (n *NodeClient) Unsigned() ([]bridgeTypes.Withdraw, error) {
+func (n *NodeClient) Unsigned(ctx context.Context) ([]bridgeTypes.Withdraw, error) {
 	conn, err := n.grpcConn()
 	if err != nil {
 		return nil, err
 	}
 	queryClient := bridgeTypes.NewQueryClient(conn)
-	res, err := queryClient.WithdrawsByStatus(context.Background(), &bridgeTypes.QueryWithdrawsByStatusRequest{
+	res, err := queryClient.WithdrawsByStatus(ctx, &bridgeTypes.QueryWithdrawsByStatusRequest{
 		Status: bridgeTypes.WithdrawStatus_WITHDRAW_STATUS_PENDING,
 		Pagination: &query.PageRequest{
-			Limit: 100,
+			Limit: n.UnsignedTxLimit,
 		},
 	})
 	if err != nil {
@@ -222,22 +220,15 @@ func (n *NodeClient) Unsigned() ([]bridgeTypes.Withdraw, error) {
 	return res.Withdraw, nil
 }
 
-func (n *NodeClient) Sign(hash string, pack *psbt.Packet) error {
-	senderAddress, err := n.B2NodeSenderAddress()
-	if err != nil {
-		return err
-	}
+func (n *NodeClient) Sign(ctx context.Context, hash string, pack *psbt.Packet) error {
 	if len(pack.Inputs) == 0 {
 		return fmt.Errorf("psbt pack.Inputs is empty")
 	}
-
 	packB64, err := pack.B64Encode()
 	if err != nil {
 		return err
 	}
-
-	msg := bridgeTypes.NewMsgSignWithdraw(senderAddress, hash, packB64)
-	ctx := context.Background()
+	msg := bridgeTypes.NewMsgSignWithdraw(n.B2NodeAddress, hash, packB64)
 	msgResponse, err := n.broadcastTx(ctx, msg)
 	if err != nil {
 		return fmt.Errorf("broadcastTx err: %w", err)
@@ -251,20 +242,20 @@ func (n *NodeClient) Sign(hash string, pack *psbt.Packet) error {
 	return nil
 }
 
-func (n *NodeClient) BaseFee() (uint64, error) {
+func (n *NodeClient) BaseFee(ctx context.Context) (uint64, error) {
 	conn, err := n.grpcConn()
 	if err != nil {
 		return 0, err
 	}
 	queryClient := feeTypes.NewQueryClient(conn)
-	res, err := queryClient.Params(context.Background(), &feeTypes.QueryParamsRequest{})
+	res, err := queryClient.Params(ctx, &feeTypes.QueryParamsRequest{})
 	if err != nil {
 		return 0, err
 	}
 	return res.Params.BaseFee.Uint64(), nil
 }
 
-func B2NodeBech32Prefix(host string, port uint32) (string, error) {
+func bech32Prefix(host string, port uint32) (string, error) {
 	conn, err := grpc.Dial(fmt.Sprintf("%s:%d", host, port), grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
 		return "", err
@@ -276,4 +267,21 @@ func B2NodeBech32Prefix(host string, port uint32) (string, error) {
 		return "", err
 	}
 	return bech32Prefix.Bech32Prefix, nil
+}
+
+func b2NodeAddress(privateKey ethsecp256k1.PrivKey, prefix string) (string, error) {
+	privKey, err := privateKey.ToECDSA()
+	if err != nil {
+		return "", err
+	}
+	ethAddress := crypto.PubkeyToAddress(privKey.PublicKey)
+	bz, err := hex.DecodeString(ethAddress.Hex()[2:])
+	if err != nil {
+		return "", err
+	}
+	b2nodeAddress, err := bech32.ConvertAndEncode(prefix, bz)
+	if err != nil {
+		return "", err
+	}
+	return b2nodeAddress, nil
 }

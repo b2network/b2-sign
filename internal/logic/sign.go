@@ -1,6 +1,7 @@
 package logic
 
 import (
+	"context"
 	"log"
 	"strings"
 	"time"
@@ -12,7 +13,9 @@ import (
 )
 
 const (
-	WaitTimeout = 1 * time.Minute
+	WaitTimeout    = 1 * time.Minute
+	ContextTimeout = 2 * time.Hour
+	SignTimeout    = 2 * time.Second
 )
 
 type SignService struct {
@@ -51,11 +54,15 @@ func (s *SignService) Handle() error {
 		}
 	}()
 
-	unsignedRsp, err := s.b2node.Unsigned()
+	ctx, cancel := context.WithTimeout(context.Background(), ContextTimeout)
+	defer cancel()
+
+	unsignedRsp, err := s.b2node.Unsigned(ctx)
 	if err != nil {
 		return err
 	}
 
+	log.Println("unsigned data len:", len(unsignedRsp))
 	for _, tx := range unsignedRsp {
 		pack, err := psbt.NewFromRawBytes(strings.NewReader(tx.EncodedData), true)
 		if err != nil {
@@ -68,11 +75,12 @@ func (s *SignService) Handle() error {
 			return err
 		}
 
-		err = s.b2node.Sign(tx.TxId, signPack)
+		err = s.b2node.Sign(ctx, tx.TxId, signPack)
 		if err != nil {
-			log.Println("b2node sign err:", err.Error())
+			log.Println("b2node send sign data err:", err.Error())
 			return err
 		}
+		time.Sleep(SignTimeout)
 	}
 	return nil
 }

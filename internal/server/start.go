@@ -33,7 +33,7 @@ func Start(mnemonic, mnemonicPass string, derive string) (err error) {
 		return err
 	}
 	log.Println("xpub: ", childKey.PublicKey())
-	log.Println("derive Path: ", derive)
+	log.Println("derive path: ", derive)
 	signKey, err := childKey.ECPrivKey()
 	if err != nil {
 		log.Println(err)
