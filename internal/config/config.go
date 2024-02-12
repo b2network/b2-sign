@@ -6,8 +6,6 @@ import (
 
 // Config is the global config.
 type Config struct {
-	// B2NodePrivKey defines the b2 node private key, b2node rpc sign
-	B2NodePrivKey string `env:"B2_NODE_PRIV_KEY"`
 	// B2NodeChainID defines the b2 node chain id
 	B2NodeChainID string `env:"B2_NODE_CHAIN_ID"`
 	// B2NodeGRPCHost defines the b2 node grpc host

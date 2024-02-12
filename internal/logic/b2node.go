@@ -2,6 +2,7 @@ package logic
 
 import (
 	"context"
+	"crypto/ecdsa"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -52,19 +53,11 @@ type Sign struct {
 
 func NewNodeClient(
 	cfg *config.Config,
+	b2NodePrivKey []byte,
+	prefix string,
 ) (*NodeClient, error) {
-	privatekeyBytes, err := hex.DecodeString(cfg.B2NodePrivKey)
-	if nil != err {
-		return nil, err
-	}
-
-	prefix, err := bech32Prefix(cfg.B2NodeGRPCHost, cfg.B2NodeGRPCPort)
-	if err != nil {
-		return nil, err
-	}
-
 	pk := ethsecp256k1.PrivKey{
-		Key: privatekeyBytes,
+		Key: b2NodePrivKey,
 	}
 
 	b2NodeAddress, err := b2NodeAddress(pk, prefix)
@@ -269,7 +262,7 @@ func (n *NodeClient) BaseFee(ctx context.Context) (uint64, error) {
 	return res.Params.BaseFee.Uint64(), nil
 }
 
-func bech32Prefix(host string, port uint32) (string, error) {
+func Bech32Prefix(host string, port uint32) (string, error) {
 	conn, err := grpc.Dial(fmt.Sprintf("%s:%d", host, port), grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
 		return "", err
@@ -298,4 +291,17 @@ func b2NodeAddress(privateKey ethsecp256k1.PrivKey, prefix string) (string, erro
 		return "", err
 	}
 	return b2nodeAddress, nil
+}
+
+func EcdsaToB2NodeAddress(publicKey ecdsa.PublicKey, prefix string) (string, string, error) {
+	ethAddress := crypto.PubkeyToAddress(publicKey)
+	bz, err := hex.DecodeString(ethAddress.Hex()[2:])
+	if err != nil {
+		return "", "", err
+	}
+	b2nodeAddress, err := bech32.ConvertAndEncode(prefix, bz)
+	if err != nil {
+		return "", "", err
+	}
+	return b2nodeAddress, ethAddress.Hex(), nil
 }

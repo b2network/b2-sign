@@ -56,19 +56,25 @@ func startCmd() *cobra.Command {
 				fmt.Println("Error: Cannot read password from non-terminal input")
 				return
 			}
-			derive, err := cmd.Flags().GetString("derive")
+			btcDerive, err := cmd.Flags().GetString("btc-derive")
 			if err != nil {
 				log.Println("read derive err:", err.Error())
 				return
 			}
-			err = server.Start(mnemonic, mnemonicPass, derive)
+			b2Derive, err := cmd.Flags().GetString("b2node-derive")
+			if err != nil {
+				log.Println("read derive err:", err.Error())
+				return
+			}
+			err = server.Start(mnemonic, mnemonicPass, btcDerive, b2Derive)
 			if err != nil {
 				log.Println("start sign service failed:", err.Error())
 				return
 			}
 		},
 	}
-	cmd.Flags().StringP("derive", "d", "m/48'/1'/0'/2'/0/1/0/0", "derive path")
+	cmd.Flags().String("btc-derive", "m/48'/1'/0'/2'/0/1/0/0", "btc derive path")
+	cmd.Flags().String("b2node-derive", "m/44'/60'/0'/0/0", "b2node derive path")
 	return cmd
 }
 
