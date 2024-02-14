@@ -91,9 +91,11 @@ func (s *SignService) SignPsbt(pack *psbt.Packet) (*psbt.Packet, error) {
 	if err != nil {
 		return nil, err
 	}
+	prevOutputFetcher := txscript.NewMultiPrevOutFetcher(nil)
 	for i, in := range tx.TxIn {
-		prevOutputFetcher := txscript.NewMultiPrevOutFetcher(nil)
 		prevOutputFetcher.AddPrevOut(in.PreviousOutPoint, pack.Inputs[i].WitnessUtxo)
+	}
+	for i := range tx.TxIn {
 		witnessSig, err := txscript.RawTxInWitnessSignature(
 			tx,
 			txscript.NewTxSigHashes(tx, prevOutputFetcher),
