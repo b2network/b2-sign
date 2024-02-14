@@ -224,7 +224,7 @@ func (n *NodeClient) Sign(ctx context.Context, hash string, pack *psbt.Packet) e
 	if len(pack.Inputs) == 0 {
 		return fmt.Errorf("psbt pack.Inputs is empty")
 	}
-	sign := make([]Sign, len(pack.Inputs))
+	var sign []Sign
 	for index, input := range pack.Inputs {
 		sign = append(sign, Sign{
 			TxInIndex: index,
