@@ -30,7 +30,7 @@ func rootCmd() *cobra.Command {
 
 	rootCmd.AddCommand(startCmd())
 	rootCmd.AddCommand(genMultiScript())
-
+	rootCmd.CompletionOptions.DisableDefaultCmd = true
 	return rootCmd
 }
 
@@ -73,8 +73,8 @@ func startCmd() *cobra.Command {
 			}
 		},
 	}
-	cmd.Flags().String("btc-derive", "m/48'/1'/0'/2'/0/1/0/0", "btc derive path")
-	cmd.Flags().String("b2node-derive", "m/44'/60'/0'/0/0", "b2node derive path")
+	cmd.Flags().StringP("btc-derive", "b", "m/48'/1'/0'/2'/0/1/0/0", "btc derive path")
+	cmd.Flags().StringP("b2node-derive", "n", "m/44'/60'/0'/0/0", "b2node derive path")
 	return cmd
 }
 
@@ -82,7 +82,7 @@ func genMultiScript() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "multi",
 		Short: "gen btc multisig address & script",
-		Long:  "gen btc multisig address & script, eg: multi 2 xpub1 xpub2 xpub3",
+		Long:  "gen btc multisig address & script, eg: multi -t -n 2 -p \"pub1, pub2, pub3\"",
 		Run: func(cmd *cobra.Command, args []string) {
 			testnet, err := cmd.Flags().GetBool("testnet")
 			if err != nil {
@@ -94,13 +94,13 @@ func genMultiScript() *cobra.Command {
 				log.Println(err.Error())
 				return
 			}
-			xpubStr, err := cmd.Flags().GetString("xpubs")
+			pubStr, err := cmd.Flags().GetString("pubkeys")
 			if err != nil {
 				log.Println(err.Error())
 				return
 			}
-			xpubs := strings.Split(xpubStr, ",")
-			address, script, err := btc.GenerateMultiSigScript(xpubs, signNum, testnet)
+			pubs := strings.Split(pubStr, ",")
+			address, script, err := btc.GenerateMultiSigScript(pubs, signNum, testnet)
 			if err != nil {
 				log.Println(err.Error())
 				return
@@ -111,6 +111,6 @@ func genMultiScript() *cobra.Command {
 	}
 	cmd.Flags().BoolP("testnet", "t", false, "testnet flag")
 	cmd.Flags().IntP("signum", "n", 1, "min sig num")
-	cmd.Flags().StringP("xpubs", "x", "", "sign xpub eg: \"xpub1, xpub2, xpub3\"")
+	cmd.Flags().StringP("pubkeys", "p", "", "sign pubkeys eg: \"pub1, pub2, pub3\"")
 	return cmd
 }

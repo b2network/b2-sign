@@ -2,30 +2,26 @@ package btc
 
 import (
 	"crypto/sha256"
-	"strings"
+	"encoding/hex"
 
 	"github.com/btcsuite/btcd/btcutil"
-	"github.com/btcsuite/btcd/btcutil/hdkeychain"
 	"github.com/btcsuite/btcd/chaincfg"
 	"github.com/btcsuite/btcd/txscript"
 )
 
-func GenerateMultiSigScript(xpubs []string, minSignNum int, testnet bool) (string, []byte, error) {
+func GenerateMultiSigScript(pubs []string, minSignNum int, testnet bool) (string, []byte, error) {
 	net := &chaincfg.MainNetParams
 	if testnet {
 		net = &chaincfg.TestNet3Params
 	}
 	var allPubKeys []*btcutil.AddressPubKey
-	for _, xpub := range xpubs {
-		exPub, err := hdkeychain.NewKeyFromString(strings.TrimSpace(xpub))
+	for _, pub := range pubs {
+		pubKey, err := hex.DecodeString(pub)
 		if err != nil {
 			return "", nil, err
 		}
-		pubKey, err := exPub.ECPubKey()
-		if err != nil {
-			return "", nil, err
-		}
-		addressPubKey, err := btcutil.NewAddressPubKey(pubKey.SerializeCompressed(), net)
+
+		addressPubKey, err := btcutil.NewAddressPubKey(pubKey, net)
 		if err != nil {
 			return "", nil, err
 		}

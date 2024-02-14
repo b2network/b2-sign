@@ -10,6 +10,7 @@ import (
 
 	"github.com/b2network/b2-sign/internal/config"
 	"github.com/btcsuite/btcd/btcutil/psbt"
+	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
@@ -294,7 +295,8 @@ func b2NodeAddress(privateKey ethsecp256k1.PrivKey, prefix string) (string, erro
 }
 
 func EcdsaToB2NodeAddress(publicKey ecdsa.PublicKey, prefix string) (string, string, error) {
-	ethAddress := crypto.PubkeyToAddress(publicKey)
+	pubBytes := crypto.FromECDSAPub(&publicKey)
+	ethAddress := common.BytesToAddress(crypto.Keccak256(pubBytes[1:])[12:])
 	bz, err := hex.DecodeString(ethAddress.Hex()[2:])
 	if err != nil {
 		return "", "", err
