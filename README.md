@@ -27,7 +27,7 @@ make build
 
 1. gen multi sig address && script
 ```shell
-./build/b2-sign multi -n 2 -t -x  xpub1,xpub2,xpub3
+./build/b2-sign multi -n 2 -t -p  pub1,pub2,pub3
 ```
 
 ## Resources
