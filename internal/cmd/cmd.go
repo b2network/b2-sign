@@ -1,0 +1,116 @@
+package cmd
+
+import (
+	"encoding/hex"
+	"fmt"
+	"log"
+	"os"
+	"strings"
+	"syscall"
+
+	"github.com/b2network/b2-sign/internal/btc"
+	"github.com/b2network/b2-sign/internal/server"
+	"github.com/spf13/cobra"
+	"golang.org/x/term"
+)
+
+func Execute() {
+	err := rootCmd().Execute()
+	if err != nil {
+		os.Exit(1)
+	}
+}
+
+func rootCmd() *cobra.Command {
+	rootCmd := &cobra.Command{
+		Use:   "b2-sign",
+		Short: "b2 sign",
+		Long:  "b2-sign is a application that signed btc transaction",
+	}
+
+	rootCmd.AddCommand(startCmd())
+	rootCmd.AddCommand(genMultiScript())
+	rootCmd.CompletionOptions.DisableDefaultCmd = true
+	return rootCmd
+}
+
+func startCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "start",
+		Short: "start sign service",
+		Run: func(cmd *cobra.Command, _ []string) {
+			var (
+				mnemonic     string
+				mnemonicPass string
+			)
+			if term.IsTerminal(int(syscall.Stdin)) {
+				fmt.Print("Enter mnemonic: ")
+				mnemonicStdin, _ := term.ReadPassword(int(syscall.Stdin))
+				fmt.Println()
+				mnemonic = string(mnemonicStdin)
+				fmt.Print("Enter mnemonic password: ")
+				password, _ := term.ReadPassword(int(syscall.Stdin))
+				fmt.Println()
+				mnemonicPass = string(password)
+			} else {
+				fmt.Println("Error: Cannot read password from non-terminal input")
+				return
+			}
+			btcDerive, err := cmd.Flags().GetString("btc-derive")
+			if err != nil {
+				log.Println("read derive err:", err.Error())
+				return
+			}
+			b2Derive, err := cmd.Flags().GetString("b2node-derive")
+			if err != nil {
+				log.Println("read derive err:", err.Error())
+				return
+			}
+			err = server.Start(mnemonic, mnemonicPass, btcDerive, b2Derive)
+			if err != nil {
+				log.Println("start sign service failed:", err.Error())
+				return
+			}
+		},
+	}
+	cmd.Flags().StringP("btc-derive", "b", "m/48'/1'/0'/2'/0/1/0/0", "btc derive path")
+	cmd.Flags().StringP("b2node-derive", "n", "m/44'/60'/0'/0/0", "b2node derive path")
+	return cmd
+}
+
+func genMultiScript() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "multi",
+		Short: "gen btc multisig address & script",
+		Long:  "gen btc multisig address & script, eg: multi -t -n 2 -p \"pub1, pub2, pub3\"",
+		Run: func(cmd *cobra.Command, args []string) {
+			testnet, err := cmd.Flags().GetBool("testnet")
+			if err != nil {
+				log.Println(err.Error())
+				return
+			}
+			signNum, err := cmd.Flags().GetInt("signum")
+			if err != nil {
+				log.Println(err.Error())
+				return
+			}
+			pubStr, err := cmd.Flags().GetString("pubkeys")
+			if err != nil {
+				log.Println(err.Error())
+				return
+			}
+			pubs := strings.Split(pubStr, ",")
+			address, script, err := btc.GenerateMultiSigScript(pubs, signNum, testnet)
+			if err != nil {
+				log.Println(err.Error())
+				return
+			}
+			log.Println("multisig address: ", address)
+			log.Println("multisig script: ", hex.EncodeToString(script))
+		},
+	}
+	cmd.Flags().BoolP("testnet", "t", false, "testnet flag")
+	cmd.Flags().IntP("signum", "n", 1, "min sig num")
+	cmd.Flags().StringP("pubkeys", "p", "", "sign pubkeys eg: \"pub1, pub2, pub3\"")
+	return cmd
+}
