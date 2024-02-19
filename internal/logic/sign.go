@@ -113,3 +113,7 @@ func (s *SignService) SignPsbt(pack *psbt.Packet) (*psbt.Packet, error) {
 	}
 	return updater.Upsbt, nil
 }
+
+func (s *SignService) Stop() error {
+	return s.b2node.CloseGrpc()
+}

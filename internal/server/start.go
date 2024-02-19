@@ -85,6 +85,10 @@ func Start(mnemonic, mnemonicPass string, btcDerive string, b2nodeDerive string)
 	}
 	// wait quit
 	code := WaitForQuitSignals()
+	err = s.Stop()
+	if err != nil {
+		log.Println("server stop err:", err.Error())
+	}
 	log.Println("server exit code:", code)
 	return nil
 }

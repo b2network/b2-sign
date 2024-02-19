@@ -45,6 +45,7 @@ type NodeClient struct {
 	AddressPrefix   string
 	B2NodeAddress   string
 	UnsignedTxLimit uint64
+	GrpcConn        *grpc.ClientConn
 }
 
 type Sign struct {
@@ -66,6 +67,11 @@ func NewNodeClient(
 		return nil, err
 	}
 
+	conn, err := grpc.Dial(fmt.Sprintf("%s:%d", cfg.B2NodeGRPCHost, cfg.B2NodeGRPCPort), grpc.WithTransportCredentials(insecure.NewCredentials()))
+	if err != nil {
+		return nil, err
+	}
+
 	return &NodeClient{
 		PrivateKey:      pk,
 		ChainID:         cfg.B2NodeChainID,
@@ -75,32 +81,20 @@ func NewNodeClient(
 		AddressPrefix:   prefix,
 		B2NodeAddress:   b2NodeAddress,
 		UnsignedTxLimit: cfg.B2NodeUnsignedTxLimit,
+		GrpcConn:        conn,
 	}, nil
 }
 
-func (n *NodeClient) grpcConn() (*grpc.ClientConn, error) {
-	conn, err := grpc.Dial(fmt.Sprintf("%s:%d", n.GrpcHost, n.GrpcPort), grpc.WithTransportCredentials(insecure.NewCredentials()))
-	if err != nil {
-		return nil, err
-	}
-	return conn, nil
+func (n *NodeClient) GetGrpcConn() *grpc.ClientConn {
+	return n.GrpcConn
 }
 
-func grpcConn(host string, port uint32) (*grpc.ClientConn, error) {
-	conn, err := grpc.Dial(fmt.Sprintf(host, port), grpc.WithTransportCredentials(insecure.NewCredentials()))
-	if err != nil {
-		return nil, err
-	}
-	return conn, nil
+func (n *NodeClient) CloseGrpc() error {
+	return n.GrpcConn.Close()
 }
 
 func (n *NodeClient) GetAccountInfo(ctx context.Context) (*eTypes.EthAccount, error) {
-	conn, err := n.grpcConn()
-	if err != nil {
-		return nil, err
-	}
-	defer conn.Close()
-
+	conn := n.GetGrpcConn()
 	authClient := authTypes.NewQueryClient(conn)
 	res, err := authClient.Account(ctx, &authTypes.QueryAccountRequest{Address: n.B2NodeAddress})
 	if err != nil {
@@ -119,7 +113,6 @@ func (n *NodeClient) GetGasPrice(ctx context.Context) (uint64, error) {
 	if err != nil {
 		return 0, err
 	}
-	baseFee = baseFee * 2
 	return baseFee, nil
 }
 
@@ -133,12 +126,7 @@ func (n *NodeClient) broadcastTx(ctx context.Context, msgs ...sdk.Msg) (*tx.Broa
 		return nil, fmt.Errorf("buildSimTx err: %w", err)
 	}
 
-	conn, err := n.grpcConn()
-	if err != nil {
-		return nil, err
-	}
-	defer conn.Close()
-	txClient := tx.NewServiceClient(conn)
+	txClient := tx.NewServiceClient(n.GetGrpcConn())
 	res, err := txClient.BroadcastTx(ctx, &tx.BroadcastTxRequest{
 		Mode:    tx.BroadcastMode_BROADCAST_MODE_BLOCK,
 		TxBytes: txBytes,
@@ -203,11 +191,7 @@ func (n *NodeClient) buildSimTx(ctx context.Context, gasPrice uint64, msgs ...sd
 }
 
 func (n *NodeClient) Unsigned(ctx context.Context) ([]bridgeTypes.Withdraw, error) {
-	conn, err := n.grpcConn()
-	if err != nil {
-		return nil, err
-	}
-	queryClient := bridgeTypes.NewQueryClient(conn)
+	queryClient := bridgeTypes.NewQueryClient(n.GetGrpcConn())
 	res, err := queryClient.WithdrawsByStatus(ctx, &bridgeTypes.QueryWithdrawsByStatusRequest{
 		Status: bridgeTypes.WithdrawStatus_WITHDRAW_STATUS_PENDING,
 		Pagination: &query.PageRequest{
@@ -251,11 +235,7 @@ func (n *NodeClient) Sign(ctx context.Context, hash string, pack *psbt.Packet) e
 }
 
 func (n *NodeClient) BaseFee(ctx context.Context) (uint64, error) {
-	conn, err := n.grpcConn()
-	if err != nil {
-		return 0, err
-	}
-	queryClient := feeTypes.NewQueryClient(conn)
+	queryClient := feeTypes.NewQueryClient(n.GetGrpcConn())
 	res, err := queryClient.Params(ctx, &feeTypes.QueryParamsRequest{})
 	if err != nil {
 		return 0, err
